@@ -77,15 +77,15 @@ impl From<u8> for NalUnitType {
 }
 
 #[derive(Debug, Clone)]
-pub struct Nal<'a> {
+pub struct Nal {
     pub start_code_len: u8,
     pub ref_idc: u8,
     pub nal_type: NalUnitType,
-    pub ebsp: &'a [u8],
+    pub ebsp: Vec<u8>,
 }
 
-impl<'a> Nal<'a> {
-    pub fn parse(start_code_len: u8, data: &'a [u8]) -> Result<Self> {
+impl Nal {
+    pub fn parse(start_code_len: u8, data: &[u8]) -> Result<Self> {
         if data.is_empty() {
             return Err(Error::InvalidNalHeader);
         }
@@ -102,9 +102,9 @@ impl<'a> Nal<'a> {
         let nal_type = NalUnitType::from(nal_unit_type);
 
         let ebsp = if data.len() > 1 {
-            &data[1..]
+            data[1..].to_vec()
         } else {
-            &[]
+            Vec::new()
         };
 
         Ok(Nal {
@@ -116,7 +116,7 @@ impl<'a> Nal<'a> {
     }
 
     pub fn to_rbsp(&self) -> Vec<u8> {
-        ebsp_to_rbsp(self.ebsp)
+        ebsp_to_rbsp(&self.ebsp)
     }
 
     pub fn is_slice(&self) -> bool {

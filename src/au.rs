@@ -14,8 +14,8 @@ pub enum AccessUnitKind {
 }
 
 #[derive(Debug, Clone)]
-pub struct AccessUnit<'a> {
-    pub nals: Vec<Nal<'a>>,
+pub struct AccessUnit {
+    pub nals: Vec<Nal>,
     pub is_keyframe: bool,
     pub kind: AccessUnitKind,
     pub sps: Option<Arc<Sps>>,
@@ -23,7 +23,7 @@ pub struct AccessUnit<'a> {
     pub picture_id: Option<PictureId>,
 }
 
-impl<'a> AccessUnit<'a> {
+impl AccessUnit {
     pub fn new() -> Self {
         Self {
             nals: Vec::new(),
@@ -39,11 +39,11 @@ impl<'a> AccessUnit<'a> {
         self.is_keyframe
     }
 
-    pub fn nals(&self) -> impl Iterator<Item = &Nal<'a>> {
+    pub fn nals(&self) -> impl Iterator<Item = &Nal> {
         self.nals.iter()
     }
 
-    pub fn to_annexb_bytes(&self) -> Cow<'a, [u8]> {
+    pub fn to_annexb_bytes(&self) -> Cow<'_, [u8]> {
         let mut bytes = Vec::new();
         
         for nal in &self.nals {
@@ -58,13 +58,13 @@ impl<'a> AccessUnit<'a> {
             let header = ((nal.ref_idc & 0b11) << 5) | (nal.nal_type.as_u8() & 0b11111);
             bytes.push(header);
             
-            bytes.extend_from_slice(nal.ebsp);
+            bytes.extend_from_slice(&nal.ebsp);
         }
         
         Cow::Owned(bytes)
     }
 
-    pub fn add_nal(&mut self, nal: Nal<'a>) {
+    pub fn add_nal(&mut self, nal: Nal) {
         if nal.nal_type == NalUnitType::IdrSlice {
             self.kind = AccessUnitKind::Idr;
             self.is_keyframe = true;
@@ -111,12 +111,12 @@ impl<'a> AccessUnit<'a> {
     }
 }
 
-pub struct AccessUnitBuilder<'a> {
-    current_au: Option<AccessUnit<'a>>,
+pub struct AccessUnitBuilder {
+    current_au: Option<AccessUnit>,
     current_picture_id: Option<PictureId>,
 }
 
-impl<'a> AccessUnitBuilder<'a> {
+impl AccessUnitBuilder {
     pub fn new() -> Self {
         Self {
             current_au: None,
@@ -155,11 +155,11 @@ impl<'a> AccessUnitBuilder<'a> {
 
     pub fn add_nal(
         &mut self,
-        nal: Nal<'a>,
+        nal: Nal,
         slice_header: Option<SliceHeader>,
         sps: Option<Arc<Sps>>,
         pps: Option<Arc<Pps>>,
-    ) -> Option<AccessUnit<'a>> {
+    ) -> Option<AccessUnit> {
         let is_boundary = if let (Some(ref header), Some(ref sps_ref)) = (&slice_header, &sps) {
             self.is_au_boundary(&nal, Some(header), Some(sps_ref))
         } else {
@@ -201,7 +201,7 @@ impl<'a> AccessUnitBuilder<'a> {
         completed_au
     }
 
-    pub fn flush(mut self) -> Option<AccessUnit<'a>> {
+    pub fn flush(mut self) -> Option<AccessUnit> {
         if let Some(mut au) = self.current_au.take() {
             au.check_recovery_point();
             Some(au)
@@ -210,7 +210,7 @@ impl<'a> AccessUnitBuilder<'a> {
         }
     }
     
-    pub fn flush_pending(&mut self) -> Option<AccessUnit<'a>> {
+    pub fn flush_pending(&mut self) -> Option<AccessUnit> {
         if let Some(mut au) = self.current_au.take() {
             au.check_recovery_point();
             self.current_picture_id = None;

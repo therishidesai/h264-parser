@@ -1,15 +1,17 @@
 use h264_parser::AnnexBParser;
 use std::fs::File;
-use std::io::Read;
+use std::io::{Read, Write};
+
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = std::env::args().collect();
-    if args.len() != 2 {
-        eprintln!("Usage: {} <h264_file>", args[0]);
+    if args.len() != 3 {
+        eprintln!("Usage: {} <h264_file> <output_h264_file>", args[0]);
         return Ok(());
     }
 
     let mut file = File::open(&args[1])?;
+    let mut out_file = File::create(&args[2])?;
     let mut buffer = Vec::new();
     file.read_to_end(&mut buffer)?;
 
@@ -24,25 +26,27 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         
         if au.is_keyframe() {
             keyframe_count += 1;
-            println!("Frame {}: KEYFRAME", frame_count);
+            eprintln!("Frame {}: KEYFRAME", frame_count);
         } else {
-            println!("Frame {}: Regular frame", frame_count);
+            eprintln!("Frame {}: Regular frame", frame_count);
         }
 
         if let Some(ref sps) = au.sps {
-            println!("  Resolution: {}x{}", sps.width, sps.height);
-            println!("  Profile: {}, Level: {}", sps.profile_idc, sps.level_idc);
+            eprintln!("  Resolution: {}x{}", sps.width, sps.height);
+            eprintln!("  Profile: {}, Level: {}", sps.profile_idc, sps.level_idc);
         }
 
-        println!("  NAL units in frame: {}", au.nals.len());
+        eprintln!("  NAL units in frame: {}", au.nals.len());
         for nal in au.nals() {
-            println!("    - {:?}", nal.nal_type);
+            eprintln!("    - {:?}", nal.nal_type);
         }
+
+        out_file.write_all(&au.to_annexb_bytes())?;
     }
 
-    println!("\nSummary:");
-    println!("Total frames: {}", frame_count);
-    println!("Keyframes: {}", keyframe_count);
+    eprintln!("\nSummary:");
+    eprintln!("Total frames: {}", frame_count);
+    eprintln!("Keyframes: {}", keyframe_count);
 
     Ok(())
 }

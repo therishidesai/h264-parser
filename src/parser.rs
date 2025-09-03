@@ -10,11 +10,10 @@ use std::sync::Arc;
 
 pub struct AnnexBParser {
     scanner: StartCodeScanner,
-    au_builder: AccessUnitBuilder<'static>,
+    au_builder: AccessUnitBuilder,
     sps_map: HashMap<u8, Arc<Sps>>,
     pps_map: HashMap<u8, Arc<Pps>>,
     pending_nals: Vec<(NalSpan, Vec<u8>)>,
-    buffer_data: Vec<u8>,
 }
 
 impl AnnexBParser {
@@ -25,7 +24,6 @@ impl AnnexBParser {
             sps_map: HashMap::new(),
             pps_map: HashMap::new(),
             pending_nals: Vec::new(),
-            buffer_data: Vec::new(),
         }
     }
 
@@ -33,7 +31,7 @@ impl AnnexBParser {
         self.scanner.push(data);
     }
 
-    pub fn next_access_unit(&mut self) -> Result<Option<AccessUnit<'static>>> {
+    pub fn next_access_unit(&mut self) -> Result<Option<AccessUnit>> {
         loop {
             let nal_span_result = self.scanner.next_nal_unit()?;
             // eprintln!("Scanner returned: {:?}", nal_span_result.as_ref().map(|s| (s.start_pos, s.data_end)));
@@ -89,17 +87,8 @@ impl AnnexBParser {
                     }
                 }
                 
-                self.buffer_data.extend_from_slice(&nal_data);
-                let owned_nal = Nal {
-                    start_code_len: nal.start_code_len,
-                    ref_idc: nal.ref_idc,
-                    nal_type: nal.nal_type,
-                    ebsp: unsafe {
-                        std::mem::transmute::<&[u8], &'static [u8]>(
-                            &self.buffer_data[self.buffer_data.len() - nal_data.len() + 1..]
-                        )
-                    },
-                };
+                // Since Nal now owns its data, we can just use the parsed nal directly
+                let owned_nal = nal.clone();
                 
                 if let Some(au) = self.au_builder.add_nal(owned_nal, slice_header, sps, pps) {
                     return Ok(Some(au));
@@ -115,7 +104,7 @@ impl AnnexBParser {
         }
     }
 
-    pub fn drain(mut self) -> impl Iterator<Item = Result<AccessUnit<'static>>> {
+    pub fn drain(mut self) -> impl Iterator<Item = Result<AccessUnit>> {
         let mut results = Vec::new();
         
         while let Ok(Some(au)) = self.next_access_unit() {
@@ -135,7 +124,6 @@ impl AnnexBParser {
         self.sps_map.clear();
         self.pps_map.clear();
         self.pending_nals.clear();
-        self.buffer_data.clear();
     }
 }
 
