@@ -1,0 +1,19 @@
+[package]
+name = "h264-parser"
+version = "0.1.0"
+edition = "2021"
+authors = ["Rishi Desai"]
+description = "H.264 Annex B stream parser library"
+license = "MIT"
+repository = "https://github.com/therishidesai/h264-parser"
+keywords = ["h264", "video", "codec", "parser", "annexb"]
+categories = ["multimedia::video", "parser-implementations"]
+
+[dependencies]
+
+[[example]]
+name = "basic_parsing"
+path = "examples/basic_parsing.rs"
+
+[dev-dependencies]
+proptest = "1.7.0"

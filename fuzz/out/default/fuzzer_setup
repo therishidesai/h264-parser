@@ -1,0 +1,7 @@
+# environment variables:
+AFL_CUSTOM_INFO_PROGRAM=target/release/fuzz
+AFL_CUSTOM_INFO_PROGRAM_ARGV=
+AFL_CUSTOM_INFO_OUT=out/default
+AFL_I_DONT_CARE_ABOUT_MISSING_CRASHES=1
+# command line:
+'/home/rishi/.local/share/afl.rs/rustc-1.91.0-nightly-7aef4be/afl.rs-0.15.20/afl/bin/afl-fuzz' '-c0' '-i' 'in' '-o' 'out' 'target/release/fuzz'
