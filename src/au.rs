@@ -45,22 +45,22 @@ impl AccessUnit {
 
     pub fn to_annexb_bytes(&self) -> Cow<'_, [u8]> {
         let mut bytes = Vec::new();
-        
+
         for nal in &self.nals {
             let start_code = if nal.start_code_len == 4 {
                 &[0x00, 0x00, 0x00, 0x01][..]
             } else {
                 &[0x00, 0x00, 0x01][..]
             };
-            
+
             bytes.extend_from_slice(start_code);
-            
+
             let header = ((nal.ref_idc & 0b11) << 5) | (nal.nal_type.as_u8() & 0b11111);
             bytes.push(header);
-            
+
             bytes.extend_from_slice(&nal.ebsp);
         }
-        
+
         Cow::Owned(bytes)
     }
 
@@ -69,7 +69,7 @@ impl AccessUnit {
             self.kind = AccessUnitKind::Idr;
             self.is_keyframe = true;
         }
-        
+
         self.nals.push(nal);
     }
 
@@ -87,7 +87,10 @@ impl AccessUnit {
                 let rbsp = nal.to_rbsp();
                 if let Ok(messages) = SeiMessage::parse(&rbsp) {
                     for msg in messages {
-                        if let SeiPayload::RecoveryPoint { recovery_frame_cnt, .. } = msg.payload {
+                        if let SeiPayload::RecoveryPoint {
+                            recovery_frame_cnt, ..
+                        } = msg.payload
+                        {
                             if recovery_frame_cnt == 0 {
                                 self.kind = AccessUnitKind::RecoveryPoint(0);
                                 self.is_keyframe = true;
@@ -144,7 +147,7 @@ impl AccessUnitBuilder {
 
         if let (Some(header), Some(sps)) = (slice_header, sps) {
             let new_picture_id = PictureId::from_slice_header(header, nal.nal_type, sps);
-            
+
             if let Some(ref current_id) = self.current_picture_id {
                 return &new_picture_id != current_id;
             }
@@ -184,7 +187,7 @@ impl AccessUnitBuilder {
             if let Some(sps) = sps {
                 au.set_sps(sps);
             }
-            
+
             if let Some(pps) = pps {
                 au.set_pps(pps);
             }
@@ -209,7 +212,7 @@ impl AccessUnitBuilder {
             None
         }
     }
-    
+
     pub fn flush_pending(&mut self) -> Option<AccessUnit> {
         if let Some(mut au) = self.current_au.take() {
             au.check_recovery_point();
@@ -229,14 +232,14 @@ mod tests {
     fn test_access_unit_keyframe_detection() {
         let mut au = AccessUnit::new();
         assert!(!au.is_keyframe());
-        
+
         let idr_nal = Nal {
             start_code_len: 4,
             ref_idc: 3,
             nal_type: NalUnitType::IdrSlice,
-            ebsp: &[],
+            ebsp: Vec::new(),
         };
-        
+
         au.add_nal(idr_nal);
         assert!(au.is_keyframe());
         assert_eq!(au.kind, AccessUnitKind::Idr);
@@ -245,16 +248,16 @@ mod tests {
     #[test]
     fn test_to_annexb_bytes() {
         let mut au = AccessUnit::new();
-        
+
         let nal = Nal {
             start_code_len: 3,
             ref_idc: 2,
             nal_type: NalUnitType::Sps,
-            ebsp: &[0x42, 0x00, 0x1f],
+            ebsp: vec![0x42, 0x00, 0x1f],
         };
-        
+
         au.add_nal(nal);
-        
+
         let bytes = au.to_annexb_bytes();
         assert_eq!(&bytes[0..3], &[0x00, 0x00, 0x01]);
         assert_eq!(bytes[3], 0x47);

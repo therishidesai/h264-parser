@@ -48,93 +48,88 @@ pub struct SliceHeader {
 }
 
 impl SliceHeader {
-    pub fn parse(
-        rbsp: &[u8],
-        nal_type: NalUnitType,
-        sps: &Sps,
-        pps: &Pps,
-    ) -> Result<Self> {
+    pub fn parse(rbsp: &[u8], nal_type: NalUnitType, sps: &Sps, pps: &Pps) -> Result<Self> {
         let mut reader = BitReader::new(rbsp);
-        
+
         let first_mb_in_slice = read_ue(&mut reader)?;
-        
+
         let slice_type_value = read_ue(&mut reader)?;
         let slice_type = SliceType::from_value(slice_type_value)
             .ok_or_else(|| Error::SliceParseError("Invalid slice type".into()))?;
-        
+
         let pic_parameter_set_id = read_ue(&mut reader)?;
         if pic_parameter_set_id > 255 {
             return Err(Error::SliceParseError("Invalid PPS ID".into()));
         }
-        
+
         let mut colour_plane_id = 0;
         if sps.separate_colour_plane_flag {
             colour_plane_id = reader.read_bits(2)? as u8;
         }
-        
+
         let frame_num_bits = sps.log2_max_frame_num_minus4 + 4;
         let frame_num = reader.read_bits(frame_num_bits as u32)?;
-        
+
         let mut field_pic_flag = false;
         let mut bottom_field_flag = false;
-        
+
         if !sps.frame_mbs_only_flag {
             field_pic_flag = reader.read_flag()?;
             if field_pic_flag {
                 bottom_field_flag = reader.read_flag()?;
             }
         }
-        
+
         let mut idr_pic_id = 0;
         if nal_type == NalUnitType::IdrSlice {
             idr_pic_id = read_ue(&mut reader)?;
         }
-        
+
         let mut pic_order_cnt_lsb = 0;
         let mut delta_pic_order_cnt_bottom = 0;
         let mut delta_pic_order_cnt = [0, 0];
-        
+
         if sps.pic_order_cnt_type == 0 {
             let pic_order_cnt_lsb_bits = sps.log2_max_pic_order_cnt_lsb_minus4 + 4;
             pic_order_cnt_lsb = reader.read_bits(pic_order_cnt_lsb_bits as u32)?;
-            
+
             if pps.bottom_field_pic_order_in_frame_present_flag && !field_pic_flag {
                 delta_pic_order_cnt_bottom = read_se(&mut reader)?;
             }
         } else if sps.pic_order_cnt_type == 1 && !sps.delta_pic_order_always_zero_flag {
             delta_pic_order_cnt[0] = read_se(&mut reader)?;
-            
+
             if pps.bottom_field_pic_order_in_frame_present_flag && !field_pic_flag {
                 delta_pic_order_cnt[1] = read_se(&mut reader)?;
             }
         }
-        
+
         let mut redundant_pic_cnt = 0;
         if pps.redundant_pic_cnt_present_flag {
             redundant_pic_cnt = read_ue(&mut reader)?;
         }
-        
+
         let mut direct_spatial_mv_pred_flag = false;
         if slice_type == SliceType::B {
             direct_spatial_mv_pred_flag = reader.read_flag()?;
         }
-        
+
         let mut num_ref_idx_active_override_flag = false;
         let mut num_ref_idx_l0_active_minus1 = pps.num_ref_idx_l0_default_active_minus1 as u32;
         let mut num_ref_idx_l1_active_minus1 = pps.num_ref_idx_l1_default_active_minus1 as u32;
-        
+
         if slice_type == SliceType::P || slice_type == SliceType::Sp || slice_type == SliceType::B {
             num_ref_idx_active_override_flag = reader.read_flag()?;
-            
+
             if num_ref_idx_active_override_flag {
                 num_ref_idx_l0_active_minus1 = read_ue(&mut reader)?;
-                
+
                 if slice_type == SliceType::B {
                     num_ref_idx_l1_active_minus1 = read_ue(&mut reader)?;
                 }
             }
         }
-        
+
         Ok(SliceHeader {
             first_mb_in_slice,
             slice_type,
@@ -174,19 +169,19 @@ impl PictureId {
         } else {
             None
         };
-        
+
         let pic_order_cnt_lsb = if sps.pic_order_cnt_type == 0 {
             Some(header.pic_order_cnt_lsb)
         } else {
             None
         };
-        
+
         let delta_pic_order_cnt = if sps.pic_order_cnt_type == 1 {
             Some(header.delta_pic_order_cnt)
         } else {
             None
         };
-        
+
         PictureId {
             frame_num: header.frame_num,
             pic_parameter_set_id: header.pic_parameter_set_id,

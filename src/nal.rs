@@ -91,7 +91,7 @@ impl Nal {
         }
 
         let header = data[0];
-        
+
         let forbidden_zero_bit = (header >> 7) & 1;
         if forbidden_zero_bit != 0 {
             return Err(Error::InvalidNalHeader);
@@ -190,7 +190,7 @@ mod tests {
     fn test_nal_parse() {
         let data = vec![0x67, 0x42, 0x00, 0x1f];
         let nal = Nal::parse(4, &data).unwrap();
-        
+
         assert_eq!(nal.ref_idc, 3);
         assert_eq!(nal.nal_type, NalUnitType::Sps);
         assert_eq!(nal.ebsp, &[0x42, 0x00, 0x1f]);
@@ -198,7 +198,9 @@ mod tests {
 
     #[test]
     fn test_ebsp_to_rbsp() {
-        let ebsp = vec![0x00, 0x00, 0x03, 0x00, 0x00, 0x03, 0x01, 0x00, 0x00, 0x03, 0x02];
+        let ebsp = vec![
+            0x00, 0x00, 0x03, 0x00, 0x00, 0x03, 0x01, 0x00, 0x00, 0x03, 0x02,
+        ];
         let rbsp = ebsp_to_rbsp(&ebsp);
         assert_eq!(rbsp, vec![0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x02]);
     }
@@ -207,7 +209,10 @@ mod tests {
     fn test_rbsp_to_ebsp() {
         let rbsp = vec![0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x02];
         let ebsp = rbsp_to_ebsp(&rbsp);
-        assert_eq!(ebsp, vec![0x00, 0x00, 0x03, 0x00, 0x00, 0x03, 0x01, 0x00, 0x00, 0x03, 0x02]);
+        assert_eq!(
+            ebsp,
+            vec![0x00, 0x00, 0x03, 0x00, 0x00, 0x03, 0x01, 0x00, 0x00, 0x03, 0x02]
+        );
     }
 
     #[test]

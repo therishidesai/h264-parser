@@ -76,7 +76,7 @@ impl SeiMessage {
     pub fn parse(rbsp: &[u8]) -> Result<Vec<SeiMessage>> {
         let mut messages = Vec::new();
         let mut pos = 0;
-        
+
         while pos < rbsp.len() && rbsp[pos] != 0x80 {
             let mut payload_type = 0u32;
             while pos < rbsp.len() && rbsp[pos] == 0xFF {
@@ -87,7 +87,7 @@ impl SeiMessage {
                 payload_type += rbsp[pos] as u32;
                 pos += 1;
             }
-            
+
             let mut payload_size = 0u32;
             while pos < rbsp.len() && rbsp[pos] == 0xFF {
                 payload_size += 255;
@@ -97,10 +97,10 @@ impl SeiMessage {
                 payload_size += rbsp[pos] as u32;
                 pos += 1;
             }
-            
+
             let payload_end = (pos + payload_size as usize).min(rbsp.len());
             let payload_data = &rbsp[pos..payload_end];
-            
+
             let payload = match payload_type {
                 6 => parse_recovery_point(payload_data)?,
                 5 => {
@@ -112,16 +112,16 @@ impl SeiMessage {
                 }
                 _ => SeiPayload::Unknown(payload_type, payload_data.to_vec()),
             };
-            
+
             messages.push(SeiMessage {
                 payload_type,
                 payload_size,
                 payload,
             });
-            
+
             pos = payload_end;
         }
-        
+
         Ok(messages)
     }
 }
@@ -130,10 +130,10 @@ fn parse_recovery_point(data: &[u8]) -> Result<SeiPayload> {
     if data.is_empty() {
         return Ok(SeiPayload::Unknown(6, data.to_vec()));
     }
-    
+
     let mut recovery_frame_cnt = 0u32;
     let mut pos = 0;
-    
+
     while pos < data.len() {
         let byte = data[pos];
         recovery_frame_cnt = (recovery_frame_cnt << 7) | ((byte & 0x7F) as u32);
@@ -142,16 +142,16 @@ fn parse_recovery_point(data: &[u8]) -> Result<SeiPayload> {
             break;
         }
     }
-    
+
     let mut flags = 0u8;
     if pos < data.len() {
         flags = data[pos];
     }
-    
+
     let exact_match_flag = (flags & 0x80) != 0;
     let broken_link_flag = (flags & 0x40) != 0;
     let changing_slice_group_idc = (flags & 0x30) >> 4;
-    
+
     Ok(SeiPayload::RecoveryPoint {
         recovery_frame_cnt,
         exact_match_flag,
@@ -173,19 +173,16 @@ mod tests {
 
     #[test]
     fn test_sei_parse_recovery_point() {
-        let rbsp = vec![
-            0x06,
-            0x02,
-            0x00,
-            0x40,
-            0x80,
-        ];
-        
+        let rbsp = vec![0x06, 0x02, 0x00, 0x40, 0x80];
+
         let messages = SeiMessage::parse(&rbsp).unwrap();
         assert_eq!(messages.len(), 1);
         assert_eq!(messages[0].payload_type, 6);
-        
-        if let SeiPayload::RecoveryPoint { recovery_frame_cnt, .. } = &messages[0].payload {
+
+        if let SeiPayload::RecoveryPoint {
+            recovery_frame_cnt, ..
+        } = &messages[0].payload
+        {
             assert_eq!(*recovery_frame_cnt, 0);
         } else {
             panic!("Expected RecoveryPoint payload");

@@ -3,7 +3,7 @@ use crate::{Error, Result};
 
 pub fn read_ue(reader: &mut BitReader) -> Result<u32> {
     let mut leading_zeros = 0;
-    
+
     while !reader.read_bit()? {
         leading_zeros += 1;
         if leading_zeros > 31 {
@@ -21,7 +21,7 @@ pub fn read_ue(reader: &mut BitReader) -> Result<u32> {
 
 pub fn read_se(reader: &mut BitReader) -> Result<i32> {
     let code_num = read_ue(reader)?;
-    
+
     // H.264 spec mapping:
     // code_num = 0 => 0
     // code_num = 1 => 1
@@ -29,7 +29,7 @@ pub fn read_se(reader: &mut BitReader) -> Result<i32> {
     // code_num = 3 => 2
     // code_num = 4 => -2
     // Pattern: odd values are positive, even values (except 0) are negative
-    
+
     if code_num == 0 {
         Ok(0)
     } else if code_num & 1 == 1 {
@@ -46,7 +46,9 @@ pub fn read_me(reader: &mut BitReader, chroma_format_idc: u8) -> Result<u32> {
         1 | 2 => {
             let code_num = read_ue(reader)?;
             if code_num > 2 {
-                return Err(Error::BitstreamError("Invalid mapped exp-golomb code".into()));
+                return Err(Error::BitstreamError(
+                    "Invalid mapped exp-golomb code".into(),
+                ));
             }
             Ok(code_num)
         }
@@ -75,17 +77,17 @@ pub fn write_ue(value: u32) -> Vec<bool> {
     let code_num = value + 1;
     let num_bits = 32 - code_num.leading_zeros();
     let total_bits = 2 * num_bits - 1;
-    
+
     let mut bits = Vec::with_capacity(total_bits as usize);
-    
+
     for _ in 0..(num_bits - 1) {
         bits.push(false);
     }
-    
+
     for i in (0..num_bits).rev() {
         bits.push((code_num >> i) & 1 != 0);
     }
-    
+
     bits
 }
 
@@ -96,7 +98,7 @@ pub fn write_se(value: i32) -> Vec<bool> {
     // -1 => code_num = 2
     // 2 => code_num = 3
     // -2 => code_num = 4
-    
+
     let code_num = if value == 0 {
         0
     } else if value > 0 {
@@ -104,7 +106,7 @@ pub fn write_se(value: i32) -> Vec<bool> {
     } else {
         ((-value) as u32) * 2
     };
-    
+
     write_ue(code_num)
 }
 
