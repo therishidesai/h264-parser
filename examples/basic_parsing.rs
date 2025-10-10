@@ -2,7 +2,6 @@ use h264_parser::AnnexBParser;
 use std::fs::File;
 use std::io::{Read, Write};
 
-
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = std::env::args().collect();
     if args.len() != 3 {
@@ -21,9 +20,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut frame_count = 0;
     let mut keyframe_count = 0;
 
-    while let Ok(Some(au)) = parser.next_access_unit() {
+    let mut emit_au = |au: h264_parser::AccessUnit| -> std::io::Result<()> {
         frame_count += 1;
-        
+
         if au.is_keyframe() {
             keyframe_count += 1;
             eprintln!("Frame {}: KEYFRAME", frame_count);
@@ -42,6 +41,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
 
         out_file.write_all(&au.to_annexb_bytes())?;
+        Ok(())
+    };
+
+    while let Ok(Some(au)) = parser.next_access_unit() {
+        emit_au(au)?;
+    }
+
+    while let Ok(Some(au)) = parser.next_access_unit_final() {
+        emit_au(au)?;
     }
 
     eprintln!("\nSummary:");

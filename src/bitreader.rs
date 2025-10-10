@@ -41,7 +41,7 @@ impl<'a> BitReader<'a> {
         }
 
         let bit = (self.data[self.byte_pos] >> (7 - self.bit_pos)) & 1;
-        
+
         self.bit_pos += 1;
         if self.bit_pos == 8 {
             self.bit_pos = 0;
@@ -53,7 +53,9 @@ impl<'a> BitReader<'a> {
 
     pub fn read_bits(&mut self, n: u32) -> Result<u32> {
         if n > 32 {
-            return Err(Error::BitstreamError("Cannot read more than 32 bits".into()));
+            return Err(Error::BitstreamError(
+                "Cannot read more than 32 bits".into(),
+            ));
         }
 
         let mut value = 0u32;
@@ -78,12 +80,12 @@ impl<'a> BitReader<'a> {
     pub fn peek_bits(&mut self, n: u32) -> Result<u32> {
         let saved_byte = self.byte_pos;
         let saved_bit = self.bit_pos;
-        
+
         let value = self.read_bits(n)?;
-        
+
         self.byte_pos = saved_byte;
         self.bit_pos = saved_bit;
-        
+
         Ok(value)
     }
 
@@ -119,16 +121,16 @@ impl<'a> BitReader<'a> {
             if bits_left == 0 || bits_left > 8 {
                 return false;
             }
-            
+
             // Get the remaining bits from current position
             let shift_amount = self.bit_pos;
             let remaining_bits = remaining_byte << shift_amount;
-            
+
             // Check if remaining bits match the RBSP stop bit pattern
             // The stop bit pattern is a single 1 followed by zeros
             // In the most significant position after shifting
             let stop_pattern = 0x80; // 10000000
-            
+
             return remaining_bits != stop_pattern;
         }
 
@@ -142,7 +144,9 @@ impl<'a> BitReader<'a> {
 
         while !self.byte_aligned() {
             if self.read_flag()? {
-                return Err(Error::BitstreamError("Expected rbsp_alignment_zero_bit".into()));
+                return Err(Error::BitstreamError(
+                    "Expected rbsp_alignment_zero_bit".into(),
+                ));
             }
         }
 
@@ -202,12 +206,12 @@ mod tests {
         // This is the RBSP stop bit (1) followed by alignment zeros
         let data = vec![0x80];
         let reader = BitReader::new(&data);
-        
+
         // At the beginning with byte_pos=0, bit_pos=0
         // We're looking at the last byte with 8 bits remaining: 10000000
         // This exactly matches the stop bit pattern, so no more RBSP data
         assert!(!reader.more_rbsp_data());
-        
+
         // Test another case: actual data before stop bit
         let data = vec![0xC0]; // 11000000 - has actual data before stop bit
         let reader = BitReader::new(&data);
