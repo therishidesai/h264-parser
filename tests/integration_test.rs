@@ -1,40 +1,64 @@
 use h264_parser::{AnnexBParser, NalUnitType};
 
+fn collect_annexb_webcodec_bytes(stream: &[u8]) -> Vec<Vec<u8>> {
+    let mut parser = AnnexBParser::new();
+    parser.push(stream);
+
+    let mut chunks = Vec::new();
+
+    while let Some(au) = parser.next_access_unit().unwrap() {
+        chunks.push(au.to_annexb_webcodec_bytes().into_owned());
+    }
+
+    while let Some(au) = parser.next_access_unit_final().unwrap() {
+        chunks.push(au.to_annexb_webcodec_bytes().into_owned());
+    }
+
+    chunks
+}
+
 #[test]
 fn test_parse_sps_pps_idr_sequence() {
-    let mut parser = AnnexBParser::new();
-
-    // Simplified test stream with just basic NAL units
     let stream = vec![
-        // SPS (minimal valid SPS)
-        0x00, 0x00, 0x00, 0x01, 0x67, 0x42, 0x00, 0x1f, 0x96, 0x54, 0x0a, 0x0f, 0xff, 0x88,
-        // PPS (minimal valid PPS)
-        0x00, 0x00, 0x00, 0x01, 0x68, 0xce, 0x3c, 0x80, // IDR slice (minimal)
-        0x00, 0x00, 0x00, 0x01, 0x65, 0x88, 0x80, 0x50, 0x00, 0x00, 0x03, 0x00, 0x00, 0x03, 0x00,
-        0x00,
+        0x00, 0x00, 0x00, 0x01, 0x67, 0x42, 0x00, 0x1f, 0x96, 0x54, 0x0a, 0x0f, 0xff, 0x88, 0x00,
+        0x00, 0x00, 0x01, 0x68, 0xce, 0x3c, 0x80, 0x00, 0x00, 0x00, 0x01, 0x65, 0x88, 0x80, 0x50,
+        0x00, 0x00, 0x03, 0x00, 0x00, 0x03, 0x00, 0x00,
     ];
 
-    parser.push(&stream);
+    let chunks = collect_annexb_webcodec_bytes(&stream);
+    assert!(!chunks.is_empty());
 
-    // Try to get NALs directly for debugging
-    let mut nal_count = 0;
-    let mut found_idr = false;
+    let key_chunk = chunks
+        .iter()
+        .find(|chunk| {
+            chunk
+                .windows(5)
+                .any(|window| window[0..4] == [0x00, 0x00, 0x00, 0x01] && (window[4] & 0x1f) == 5)
+        })
+        .expect("expected key access unit");
 
-    // The parser processes NALs and groups them into AUs
-    // For this test, just verify that parsing doesn't crash
-    while let Ok(Some(au)) = parser.next_access_unit() {
-        nal_count += au.nals.len();
-        for nal in au.nals() {
-            if nal.nal_type == NalUnitType::IdrSlice {
-                found_idr = true;
-                assert!(au.is_keyframe());
-            }
+    let mut start_codes = Vec::new();
+    for idx in 0..=key_chunk.len().saturating_sub(4) {
+        if key_chunk[idx..idx + 4] == [0x00, 0x00, 0x00, 0x01] {
+            start_codes.push(idx);
         }
     }
 
-    // Basic sanity check - we processed something
-    assert!(nal_count > 0 || true, "Parser processed NAL units");
-    assert!(found_idr || true, "IDR processing verified");
+    assert_eq!(
+        start_codes.len(),
+        3,
+        "expected SPS, PPS and IDR start codes"
+    );
+
+    let nal_types: Vec<u8> = start_codes
+        .iter()
+        .map(|start| key_chunk[start + 4] & 0x1f)
+        .collect();
+
+    assert_eq!(
+        nal_types,
+        vec![NalUnitType::Sps.as_u8(), NalUnitType::Pps.as_u8(), 5]
+    );
 }
 
 #[test]

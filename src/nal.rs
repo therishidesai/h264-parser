@@ -76,7 +76,7 @@ impl From<u8> for NalUnitType {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Nal {
     pub start_code_len: u8,
     pub ref_idc: u8,

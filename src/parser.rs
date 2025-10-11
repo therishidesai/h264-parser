@@ -13,6 +13,8 @@ pub struct AnnexBParser {
     au_builder: AccessUnitBuilder,
     sps_map: HashMap<u8, Arc<Sps>>,
     pps_map: HashMap<u8, Arc<Pps>>,
+    sps_nal_map: HashMap<u8, Nal>,
+    pps_nal_map: HashMap<u8, Nal>,
 }
 
 impl AnnexBParser {
@@ -22,6 +24,8 @@ impl AnnexBParser {
             au_builder: AccessUnitBuilder::new(),
             sps_map: HashMap::new(),
             pps_map: HashMap::new(),
+            sps_nal_map: HashMap::new(),
+            pps_nal_map: HashMap::new(),
         }
     }
 
@@ -59,6 +63,8 @@ impl AnnexBParser {
         self.au_builder = AccessUnitBuilder::new();
         self.sps_map.clear();
         self.pps_map.clear();
+        self.sps_nal_map.clear();
+        self.pps_nal_map.clear();
     }
 
     fn next_access_unit_internal(&mut self, finalize: bool) -> Result<Option<AccessUnit>> {
@@ -112,12 +118,14 @@ impl AnnexBParser {
                 let sps = Sps::parse(&rbsp)?;
                 let sps_id = sps.seq_parameter_set_id;
                 self.sps_map.insert(sps_id, Arc::new(sps));
+                self.sps_nal_map.insert(sps_id, nal.clone());
             }
             NalUnitType::Pps => {
                 let rbsp = nal.to_rbsp();
                 let pps = Pps::parse(&rbsp)?;
                 let pps_id = pps.pic_parameter_set_id;
                 self.pps_map.insert(pps_id, Arc::new(pps));
+                self.pps_nal_map.insert(pps_id, nal.clone());
             }
             _ => {}
         }
@@ -125,6 +133,7 @@ impl AnnexBParser {
         let mut slice_header = None;
         let mut sps = None;
         let mut pps = None;
+        let mut extra_parameter_sets = Vec::new();
 
         if nal.is_slice() {
             let rbsp = nal.to_rbsp();
@@ -139,6 +148,14 @@ impl AnnexBParser {
                 if let Some(sps_ref) = self.sps_map.get(&sps_id) {
                     sps = Some(sps_ref.clone());
 
+                    if let Some(sps_nal) = self.sps_nal_map.get(&sps_id) {
+                        extra_parameter_sets.push(sps_nal.clone());
+                    }
+
+                    if let Some(pps_nal) = self.pps_nal_map.get(&pps_id) {
+                        extra_parameter_sets.push(pps_nal.clone());
+                    }
+
                     slice_header =
                         Some(SliceHeader::parse(&rbsp, nal.nal_type, &sps_ref, &pps_ref)?);
                 } else {
@@ -151,7 +168,9 @@ impl AnnexBParser {
 
         let owned_nal = nal.clone();
 
-        Ok(self.au_builder.add_nal(owned_nal, slice_header, sps, pps))
+        Ok(self
+            .au_builder
+            .add_nal(owned_nal, slice_header, sps, pps, extra_parameter_sets))
     }
 }
 

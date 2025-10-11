@@ -1,7 +1,7 @@
 use crate::nal::{Nal, NalUnitType};
 use crate::pps::Pps;
 use crate::sei::{SeiMessage, SeiPayload};
-use crate::slice::{PictureId, SliceHeader};
+use crate::slice::{PictureId, SliceHeader, SliceType};
 use crate::sps::Sps;
 use std::borrow::Cow;
 use std::sync::Arc;
@@ -21,6 +21,8 @@ pub struct AccessUnit {
     pub sps: Option<Arc<Sps>>,
     pub pps: Option<Arc<Pps>>,
     pub picture_id: Option<PictureId>,
+    parameter_sets: Vec<Nal>,
+    first_slice_type: Option<SliceType>,
 }
 
 impl AccessUnit {
@@ -32,6 +34,8 @@ impl AccessUnit {
             sps: None,
             pps: None,
             picture_id: None,
+            parameter_sets: Vec::new(),
+            first_slice_type: None,
         }
     }
 
@@ -47,24 +51,44 @@ impl AccessUnit {
         let mut bytes = Vec::new();
 
         for nal in &self.nals {
-            let start_code = if nal.start_code_len == 4 {
-                &[0x00, 0x00, 0x00, 0x01][..]
+            Self::push_annexb_nal(&mut bytes, nal);
+        }
+
+        Cow::Owned(bytes)
+    }
+
+    pub fn to_annexb_webcodec_bytes(&self) -> Cow<'_, [u8]> {
+        let mut bytes = Vec::new();
+
+        let include_parameter_sets =
+            self.is_keyframe || matches!(self.first_slice_type, Some(SliceType::I));
+
+        if include_parameter_sets {
+            for nal in &self.parameter_sets {
+                Self::push_annexb_nal_internal(&mut bytes, nal, true);
+            }
+        }
+
+        for nal in &self.nals {
+            let include_nal = if include_parameter_sets {
+                !matches!(nal.nal_type, NalUnitType::Sps | NalUnitType::Pps)
             } else {
-                &[0x00, 0x00, 0x01][..]
+                true
             };
 
-            bytes.extend_from_slice(start_code);
-
-            let header = ((nal.ref_idc & 0b11) << 5) | (nal.nal_type.as_u8() & 0b11111);
-            bytes.push(header);
-
-            bytes.extend_from_slice(&nal.ebsp);
+            if include_nal {
+                Self::push_annexb_nal_internal(&mut bytes, nal, true);
+            }
         }
 
         Cow::Owned(bytes)
     }
 
     pub fn add_nal(&mut self, nal: Nal) {
+        if matches!(nal.nal_type, NalUnitType::Sps | NalUnitType::Pps) {
+            self.add_parameter_set(nal.clone());
+        }
+
         if nal.nal_type == NalUnitType::IdrSlice {
             self.kind = AccessUnitKind::Idr;
             self.is_keyframe = true;
@@ -72,6 +96,38 @@ impl AccessUnit {
 
         self.nals.push(nal);
     }
+
+    pub fn add_parameter_set(&mut self, nal: Nal) {
+        if !self.parameter_sets.iter().any(|existing| existing == &nal) {
+            self.parameter_sets.push(nal);
+        }
+    }
+
+    pub(crate) fn note_slice_type(&mut self, slice_type: SliceType) {
+        if self.first_slice_type.is_none() {
+            self.first_slice_type = Some(slice_type);
+        }
+    }
+
+    fn push_annexb_nal(bytes: &mut Vec<u8>, nal: &Nal) {
+        Self::push_annexb_nal_internal(bytes, nal, false);
+    }
+
+    fn push_annexb_nal_internal(bytes: &mut Vec<u8>, nal: &Nal, force_long_start_code: bool) {
+        let start_code = if force_long_start_code || nal.start_code_len == 4 {
+            &[0x00, 0x00, 0x00, 0x01][..]
+        } else {
+            &[0x00, 0x00, 0x01][..]
+        };
+
+        bytes.extend_from_slice(start_code);
+
+        let header = ((nal.ref_idc & 0b11) << 5) | (nal.nal_type.as_u8() & 0b11111);
+        bytes.push(header);
+
+        bytes.extend_from_slice(&nal.ebsp);
+    }
+
 
     pub fn set_sps(&mut self, sps: Arc<Sps>) {
         self.sps = Some(sps);
@@ -142,7 +198,7 @@ impl AccessUnitBuilder {
         }
 
         if self.current_picture_id.is_none() {
-            return true;
+            return false;
         }
 
         if let (Some(header), Some(sps)) = (slice_header, sps) {
@@ -162,6 +218,7 @@ impl AccessUnitBuilder {
         slice_header: Option<SliceHeader>,
         sps: Option<Arc<Sps>>,
         pps: Option<Arc<Pps>>,
+        mut extra_parameter_sets: Vec<Nal>,
     ) -> Option<AccessUnit> {
         let is_boundary = if let (Some(ref header), Some(ref sps_ref)) = (&slice_header, &sps) {
             self.is_au_boundary(&nal, Some(header), Some(sps_ref))
@@ -192,8 +249,18 @@ impl AccessUnitBuilder {
                 au.set_pps(pps);
             }
 
-            if let (Some(header), Some(ref sps_ref)) = (slice_header, &au.sps) {
-                let picture_id = PictureId::from_slice_header(&header, nal.nal_type, sps_ref);
+            for parameter_set in extra_parameter_sets.drain(..) {
+                au.add_parameter_set(parameter_set);
+            }
+
+            if let Some(header) = slice_header.as_ref() {
+                if nal.is_vcl() {
+                    au.note_slice_type(header.slice_type);
+                }
+            }
+
+            if let (Some(header), Some(ref sps_ref)) = (slice_header.as_ref(), &au.sps) {
+                let picture_id = PictureId::from_slice_header(header, nal.nal_type, sps_ref);
                 self.current_picture_id = Some(picture_id.clone());
                 au.picture_id = Some(picture_id);
             }
@@ -262,5 +329,82 @@ mod tests {
         assert_eq!(&bytes[0..3], &[0x00, 0x00, 0x01]);
         assert_eq!(bytes[3], 0x47);
         assert_eq!(&bytes[4..], &[0x42, 0x00, 0x1f]);
+    }
+
+    #[test]
+    fn test_to_annexb_webcodec_bytes_includes_parameter_sets() {
+        let mut au = AccessUnit::new();
+
+        let sps = Nal {
+            start_code_len: 4,
+            ref_idc: 3,
+            nal_type: NalUnitType::Sps,
+            ebsp: vec![0x42, 0x00, 0x1f],
+        };
+
+        let pps = Nal {
+            start_code_len: 4,
+            ref_idc: 3,
+            nal_type: NalUnitType::Pps,
+            ebsp: vec![0xde, 0xad],
+        };
+
+        let slice = Nal {
+            start_code_len: 3,
+            ref_idc: 3,
+            nal_type: NalUnitType::IdrSlice,
+            ebsp: vec![0xaa, 0xbb],
+        };
+
+        au.add_parameter_set(sps.clone());
+        au.add_parameter_set(pps.clone());
+        au.add_parameter_set(sps.clone());
+
+        au.add_nal(slice);
+
+        let bytes = au.to_annexb_webcodec_bytes();
+
+        let expected = vec![
+            0x00, 0x00, 0x00, 0x01, 0x67, 0x42, 0x00, 0x1f, 0x00, 0x00, 0x00, 0x01, 0x68, 0xde,
+            0xad, 0x00, 0x00, 0x00, 0x01, 0x65, 0xaa, 0xbb,
+        ];
+
+        assert_eq!(bytes.as_ref(), &expected[..]);
+    }
+
+    #[test]
+    fn test_to_annexb_webcodec_bytes_for_delta_frame_excludes_parameter_sets() {
+        let mut au = AccessUnit::new();
+
+        let sps = Nal {
+            start_code_len: 4,
+            ref_idc: 3,
+            nal_type: NalUnitType::Sps,
+            ebsp: vec![0x42, 0x00, 0x1f],
+        };
+
+        let pps = Nal {
+            start_code_len: 4,
+            ref_idc: 3,
+            nal_type: NalUnitType::Pps,
+            ebsp: vec![0xde, 0xad],
+        };
+
+        let slice = Nal {
+            start_code_len: 4,
+            ref_idc: 2,
+            nal_type: NalUnitType::NonIdrSlice,
+            ebsp: vec![0x11, 0x22],
+        };
+
+        au.add_parameter_set(sps);
+        au.add_parameter_set(pps);
+        au.note_slice_type(SliceType::P);
+        au.add_nal(slice.clone());
+
+        let bytes = au.to_annexb_webcodec_bytes();
+
+        let expected = vec![0x00, 0x00, 0x00, 0x01, 0x41, 0x11, 0x22];
+        assert_eq!(bytes.as_ref(), &expected[..]);
     }
 }

@@ -1,6 +1,6 @@
 [package]
 name = "h264-parser"
-version = "0.3.0"
+version = "0.4.0"
 edition = "2021"
 authors = ["Rishi Desai"]
 description = "H.264 Annex B stream parser library"

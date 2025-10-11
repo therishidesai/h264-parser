@@ -44,6 +44,7 @@
             llvmPackages.libllvm
             rust-bin.nightly.latest.default
             valgrind
+            python3
           ];
         };
       }
