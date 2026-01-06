@@ -18,7 +18,7 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-h264-parser = "0.1.0"
+h264-parser = "0.4.1"
 ```
 
 Basic example:
