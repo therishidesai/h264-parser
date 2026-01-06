@@ -1,6 +1,6 @@
 # H.264 Annex B Parser
 
-A Rust library for parsing H.264 Annex B bitstreams. This library provides zero-copy parsing of NAL units, parameter sets (SPS/PPS), slice headers, and access unit assembly.
+A Rust library for parsing H.264 Annex B bitstreams. This library provides parsing of NAL units, parameter sets (SPS/PPS), slice headers, and access unit assembly.
 
 ## Features
 
@@ -11,7 +11,6 @@ A Rust library for parsing H.264 Annex B bitstreams. This library provides zero-
 - **Keyframe detection**: Identifies IDR frames and recovery points
 - **SEI parsing**: Basic support for Supplemental Enhancement Information
 - **Streaming support**: Handles chunked input data
-- **Zero-copy design**: Minimizes memory allocations where possible
 
 ## Usage
 
