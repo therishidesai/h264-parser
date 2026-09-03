@@ -105,10 +105,12 @@ impl Sps {
 
             if seq_scaling_matrix_present_flag {
                 let num_lists = if chroma_format_idc != 3 { 8 } else { 12 };
-                for _ in 0..num_lists {
+                for i in 0..num_lists {
                     let seq_scaling_list_present_flag = reader.read_flag()?;
                     if seq_scaling_list_present_flag {
-                        skip_scaling_list(&mut reader)?;
+                        // 4x4 lists (i < 6) hold 16 entries, 8x8 lists (i >= 6) hold 64.
+                        let size = if i < 6 { 16 } else { 64 };
+                        skip_scaling_list(&mut reader, size)?;
                     }
                 }
             }
@@ -246,11 +248,11 @@ impl Sps {
     }
 }
 
-fn skip_scaling_list(reader: &mut BitReader) -> Result<()> {
+fn skip_scaling_list(reader: &mut BitReader, size: usize) -> Result<()> {
     let mut last_scale = 8;
     let mut next_scale = 8;
 
-    for _ in 0..16 {
+    for _ in 0..size {
         if next_scale != 0 {
             let delta_scale = read_se(reader)?;
             next_scale = (last_scale + delta_scale + 256) % 256;
@@ -284,5 +286,28 @@ mod tests {
         assert_eq!(sps.level_idc, 31);
         assert!(sps.width > 0);
         assert!(sps.height > 0);
+    }
+
+    /// Regression test: an SPS with an 8x8 scaling list (list index >= 6) must
+    /// skip 64 entries, not 16. Under-skipping desyncs the bit reader and
+    /// yields a bogus resolution (e.g. 10x16 instead of 1920x1080).
+    #[test]
+    fn test_sps_with_8x8_scaling_list() {
+        // Real-world 1920x1080i High Profile SPS carrying two 8x8 scaling lists.
+        let nal = vec![
+            0x27, 0x64, 0x00, 0x28, 0xad, 0x84, 0x05, 0x45, 0x62, 0xb8, 0xac, 0x54, 0x71, 0x08, 0x0a,
+            0x8a, 0xc5, 0x71, 0x58, 0xa8, 0xe2, 0x10, 0x24, 0x85, 0x21, 0x39, 0x3c, 0x9f, 0x27, 0xe4,
+            0xfe, 0x4f, 0xc9, 0xf2, 0x79, 0xb9, 0xb3, 0x4d, 0x08, 0x12, 0x42, 0x90, 0x9c, 0x9e, 0x4f,
+            0x93, 0xf2, 0x7f, 0x27, 0xe4, 0xf9, 0x3c, 0xdc, 0xd9, 0xa6, 0x1b, 0x2b, 0x01, 0xe0, 0x11,
+            0x1f, 0x78, 0x08, 0x80, 0x00, 0x01, 0xf4, 0x80, 0x00, 0x75, 0x30, 0x42,
+        ];
+
+        let rbsp = ebsp_to_rbsp(&nal[1..]);
+        let sps = Sps::parse(&rbsp).unwrap();
+
+        assert_eq!(sps.profile_idc, 100);
+        assert_eq!(sps.level_idc, 40);
+        assert_eq!(sps.width, 1920);
+        assert_eq!(sps.height, 1080);
     }
 }
